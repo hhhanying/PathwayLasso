@@ -1,5 +1,6 @@
 #=================================
 # Generate simulation data: causally dependent
+# Notation here corresponds to the sequential model.
 sim.data_dep<-function(n,Z,a,b,c,Delta,Xi1,Sigma2)
 {
   k<-nrow(b)

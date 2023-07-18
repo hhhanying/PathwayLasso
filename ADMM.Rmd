@@ -1,0 +1,236 @@
+```{r}
+
+
+#################################################################
+# ADMM for (adptive) Pathway Lasso without constraint
+mediation_net_ADMM_NC<-function(Z, M, R, # data
+                                lambda = 1, omega = 0, phi = 1, # weight in pathway LASSO penalty
+                                rho=1,rho.increase=FALSE,
+                                tol=1e-10,
+                                max.itr=10000,thred=1e-10,est_thred=FALSE,
+                                Sigma1=NULL,Sigma2=NULL, # estimate of Sigma1 and Sigma2, if provided, they would be unchanged, otherwise they would be updated together
+                                trace=FALSE,
+                                k = ncol(M),
+                                Phi1 = diag(c(0, rep(1, k))),
+                                Phi2 = diag(rep(1, k + 1)),
+                                Theta0 = matrix(rep(0, k + 1),nrow = 1),
+                                D0 = matrix(rep(0, k + 1), ncol = 1),
+                                alpha0 = matrix(rep(0, k + 1),nrow = 1),
+                                beta0 = matrix(rep(0, k + 1), ncol = 1)) {
+  {
+  n <- nrow(M)
+  X<-cbind(Z,M); e1<-c(1,rep(0,k));
+  
+  sum_Z2 <- sum(Z ** 2)
+  # C'
+  C2.hat <- sum(R * Z) / sum_Z2
+  tau2.hat <- mean((R - Z * C2.hat) ** 2)
+  # A
+  A.hat <- t(Z) %*% M / sum_Z2
+  Theta.tilde <- cbind(1,A.hat)
+  E1_hat <- M - Z %*% A.hat
+  Sigma1.tilde <- diag(apply(E1_hat, 2, function(x) mean(x ** 2)))
+  
+  # Initial values
+  Sigma10 <- ifelse(is.null(Sigma1), diag(diag(t(M-Z%*%Theta0[-1])%*%(M-Z%*%Theta0[-1])/n)), Sigma1)
+  Sigma20 <- ifelse(is.null(Sigma2), t(R-X%*%D0)%*%(R-X%*%D0), Sigma2)
+  nu1=nu2<-rep(0,k+1); nu3<-0;
+  rho0 <- ifelse(rho.increase, rho, 0)
+}
+  # Trace
+  if(trace==TRUE) {
+    Theta.trace=D.trace=alpha.trace=beta.trace<-NULL
+    Theta.sg=D.sg=alpha.sg=beta.sg<-NULL
+    f<-NULL
+    
+    Theta.trace<-rbind(Theta.trace,Theta0)
+    D.trace<-cbind(D.trace,D0)
+    alpha.trace<-rbind(alpha.trace,alpha0)
+    beta.trace<-cbind(beta.trace,beta0)
+  }
+  
+  diff<-100
+  s<-0
+  
+  time<-system.time(
+    while((diff >= tol) & (s <= max.itr)) {
+      s <- s + 1 # iteration count
+      Omega1<-matrix(0,k+1,k+1)
+      Omega1[2:(k+1),2:(k+1)]<-solve(Sigma10)/n
+      w2<-1/(Sigma20*n)
+      
+      # Update Theta
+      de.Theta<-solve(sum_Z2*Omega1+2*rho*diag(c(2, rep(1,k))))
+      nu.Theta<-t(Z)%*%X%*%Omega1-t(nu1)+2*rho*alpha0+(2*rho-nu3)*t(e1)
+      Theta.new<-nu.Theta%*%de.Theta
+      if(est_thred==TRUE) {
+        Theta.idx<-which(abs(Theta.new)<thred)
+        Theta.new[Theta.idx]<-0
+      }
+      
+      # Update D
+      de.D<-solve(w2[1,1]*t(X)%*%X+2*rho*diag(rep(1,k+1)))
+      nu.D<-w2[1,1]*t(X)%*%R-nu2+2*rho*beta0
+      D.new<-de.D%*%nu.D
+      if(est_thred==TRUE) {
+        D.idx<-which(abs(D.new)<thred)
+        D.new[D.idx]<-0
+      }
+      
+      # Update alpha and beta
+      alpha.new<-matrix(rep(NA,k+1),nrow=1)
+      beta.new<-matrix(rep(NA,k+1),ncol=1)
+      J<-c(0,rep(1,k))
+      if(lambda==0)
+      {
+        J[1]<-1
+      }
+      for(j in 1:(k+1))
+      {
+        pp1<-2*lambda*phi*Phi1[j,j]^2+2*rho
+        pp2<-2*lambda*phi*Phi2[j,j]^2+2*rho
+        mu1<-nu1[j]+2*rho*Theta.new[1,j]
+        mu2<-nu2[j]+2*rho*D.new[j,1]
+        re<-solution(lambda=lambda*Phi1[j,j]*Phi2[j,j],omega1=omega*Phi1[j,j]*J[j],omega2=omega*Phi2[j,j]*J[j],
+                     phi1=pp1,phi2=pp2,mu1=mu1,mu2=mu2)
+        alpha.new[1,j]<-re$a
+        beta.new[j,1]<-re$b
+      }
+      
+      nu1<-nu1+2*rho*t(Theta.new-alpha.new)
+      nu2<-nu2+2*rho*(D.new-beta.new)
+      nu3<-nu3+2*rho*(Theta.new%*%e1-1)[1,1]
+      
+      d.Theta<-max(abs(Theta.new-Theta0))
+      d.D<-max(abs(D.new-D0))
+      
+      diff<-max(d.Theta,d.D)
+      
+      Theta0<-Theta.new
+      D0<-D.new
+      alpha0<-alpha.new
+      beta0<-beta.new
+      
+      if(is.null(Sigma1)==TRUE)
+      {
+        Sigma10<-diag(diag(t(M-Z%*%Theta0[-1])%*%(M-Z%*%Theta0[-1])/n))
+      }else
+      {
+        Sigma10<-Sigma1
+      }
+      if(is.null(Sigma2)==TRUE)
+      {
+        Sigma20<-t(R-X%*%D0)%*%(R-X%*%D0)
+      }else
+      {
+        Sigma20<-Sigma2
+      }
+      
+      if(trace==TRUE)
+      {
+        # Trace
+        Theta.trace<-rbind(Theta.trace,Theta0)
+        D.trace<-cbind(D.trace,D0)
+        alpha.trace<-rbind(alpha.trace,alpha0)
+        beta.trace<-cbind(beta.trace,beta0)
+        
+        # subgradient
+        Theta.sg<-rbind(Theta.sg,Theta0%*%solve(de.Theta)-nu.Theta)
+        D.sg<-cbind(D.sg,solve(de.D)%*%D0-nu.D)
+        alpha.sg<-rbind(alpha.sg,lambda*(t(abs(beta.new))*sign(alpha.new))%*%(Phi1*Phi2)+2*lambda*phi*alpha.new%*%(Phi1^2)+
+                          omega*(sign(alpha.new)*t(J))%*%(Phi1))
+        beta.sg<-cbind(beta.sg,lambda*(Phi1*Phi2)%*%(t(abs(alpha.new))*sign(beta.new))+2*lambda*phi*(Phi2^2)%*%beta.new+
+                         omega*Phi2%*%(J*sign(beta.new)))
+        
+        f<-c(f,opt_func(Z,M,R,Theta0,D0,Sigma10,Sigma20,lambda=lambda,phi=phi,omega=omega,Phi1=Phi1,Phi2=Phi2))
+      }
+    }
+  )
+  
+  
+  if(s>max.itr)
+  {
+    warning("Method does not converge!")
+  }
+  
+  constraint1=constraint2<-matrix(NA,1,3)
+  colnames(constraint1)=colnames(constraint2)<-c("Theta=alpha","D=beta","Theta[1]")
+  constraint1[1,1]<-(max(abs(Theta0-alpha0))<thred)
+  constraint1[1,2]<-(max(abs(D0-beta0))<thred)
+  constraint1[1,3]<-(abs(Theta0[1,1]-1)<thred)
+  constraint2[1,1]<-max(abs(Theta0-alpha0))
+  constraint2[1,2]<-max(abs(D0-beta0))
+  constraint2[1,3]<-Theta0[1,1]
+  constraint<-cbind(data.frame(t(constraint1)),data.frame(t(constraint2)))
+  colnames(constraint)<-c("Satisfied","value")
+  
+  if(constraint[1,1]==TRUE)
+  {
+    A.hat<-matrix(alpha0[-1],nrow=1)
+    colnames(A.hat)<-paste0("M",1:k)
+    rownames(A.hat)<-"Z"
+  }else
+  {
+    A.hat<-matrix(Theta0[-1],nrow=1)
+    colnames(A.hat)<-paste0("M",1:k)
+    rownames(A.hat)<-"Z"
+  }
+  if(constraint[2,1]==TRUE)
+  {
+    D.hat<-beta0
+    C.hat<-matrix(beta0[1],1,1)
+    colnames(C.hat)<-"R"
+    rownames(C.hat)<-"Z"
+    B.hat<-matrix(beta0[-1],ncol=1)
+    colnames(B.hat)<-"R"
+    rownames(B.hat)<-paste0("M",1:k) 
+  }else
+  {
+    D.hat<-D0
+    C.hat<-matrix(D0[1],1,1)
+    colnames(C.hat)<-"R"
+    rownames(C.hat)<-"Z"
+    B.hat<-matrix(D0[-1],ncol=1)
+    colnames(B.hat)<-"R"
+    rownames(B.hat)<-paste0("M",1:k)
+  }
+  Sigma1.hat<-Sigma10
+  colnames(Sigma1.hat)=rownames(Sigma1.hat)<-paste0("M",1:k)
+  Sigma2.hat<-Sigma20
+  colnames(Sigma2.hat)=rownames(Sigma2.hat)<-"R"
+  Sigma.hat<-cbind(rbind(Sigma1.hat,matrix(0,1,k)),rbind(matrix(0,k,1),Sigma2.hat))
+  colnames(Sigma.hat)=rownames(Sigma.hat)<-c(colnames(Sigma1.hat),colnames(Sigma2.hat))
+  
+  ll<-mediation_net_ll(Z,M,R,A.hat,B.hat,C.hat,Sigma.hat)
+  
+  d<-sum(abs(c(t(A.hat)*B.hat,C.hat))>thred)
+  net.BIC<--2*ll$ll.MR+d*log(n)
+  
+  if(trace==TRUE)
+  {
+    re<-list(lambda=lambda,omega=omega,phi=phi,Phi1=Phi1,Phi2=Phi2,rho=rho,A=A.hat,C=C.hat,B=B.hat,AB=t(A.hat)*B.hat,Sigma=Sigma.hat,
+             C2=C2.hat[1,1],tau2=tau2.hat,logLik=data.frame(ZMR=ll$ll.MR,ZR=ll$ll.R,lA=ll$ll.A,lB=ll$ll.B),
+             BIC=net.BIC,converge=(s<=max.itr),alpha=alpha0,beta=beta0,Theta.1=Theta0[1,1],constraint=constraint,time=time,
+             Theta.trace=Theta.trace,D.trace=D.trace,alpha.trace=alpha.trace,beta.trace=beta.trace,
+             Theta.sg=Theta.sg,D.sg=D.sg,alpha.sg=alpha.sg,beta.sg=beta.sg,opt_func.sg=f)
+  }else
+  {
+    re<-list(lambda=lambda,omega=omega,phi=phi, # parameters
+             Phi1=Phi1,Phi2=Phi2, rho=rho,# parameters
+             A=A.hat,C=C.hat,B=B.hat,
+             AB=t(A.hat)*B.hat,Sigma=Sigma.hat,
+             C2=C2.hat[1,1],tau2=tau2.hat,logLik=data.frame(ZMR=ll$ll.MR,ZR=ll$ll.R,lA=ll$ll.A,lB=ll$ll.B),
+             BIC=net.BIC,
+             converge=(s<=max.itr),alpha=alpha0,beta=beta0,Theta.1=Theta0[1,1],constraint=constraint,time=time)
+  }
+  
+  return(re)
+}
+
+
+
+
+
+
+
+```
