@@ -1,7 +1,4 @@
-#=================================
-# Generate simulation data: causally dependent
-sim.data_dep<-function(n,Z,a,b,c,Delta,Xi1,Sigma2)
-{
+sim.data_dep<-function(n,Z,a,b,c,Delta,Xi1,Sigma2) {
   k<-nrow(b)
   
   M.coef<-rbind(a,Delta)
@@ -9,14 +6,11 @@ sim.data_dep<-function(n,Z,a,b,c,Delta,Xi1,Sigma2)
   
   eps1<-matrix(NA,n,k)
   M<-matrix(NA,n,k)
-  for(j in 1:k)
-  {
+  for(j in 1:k) {
     eps1[,j]<-rnorm(n,sd=sqrt(Xi1[j,j]))
-    if(j==1)
-    {
+    if(j==1) {
       M[,j]<-Z*A[1,1]+eps1[,j]
-    }else
-    {
+    } else {
       M[,j]<-cbind(Z,M[,1:(j-1)])%*%M.coef[1:j,j]+eps1[,j]
     }
   }
@@ -25,7 +19,3 @@ sim.data_dep<-function(n,Z,a,b,c,Delta,Xi1,Sigma2)
   
   return(list(M=M,R=R))
 }
-#=================================
-
-
-
