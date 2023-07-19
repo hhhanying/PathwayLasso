@@ -30,7 +30,7 @@ soft_thred<-function(mu,lambda) {
 }
 
 
-# different omega's
+# different omega's: this function is used for updating alpha and beta
 solution<-function(lambda,omega1=0,omega2=0,phi1,phi2,mu1,mu2) {
   if(lambda==0) {
     a<-soft_thred(mu1,omega1)/phi1
@@ -67,7 +67,23 @@ solution<-function(lambda,omega1=0,omega2=0,phi1,phi2,mu1,mu2) {
   
   return(data.frame(a=0,b=0))
 }
-
+update_theta <- function(Z, Omega1, rho, k, nu1, nu3, alpha0, est_thred, thred) {
+  de.Theta<-solve(sum(Z**2)*Omega1 + 2*rho*diag(c( 2, rep(1,k))))
+  nu.Theta<-t(Z)%*%X%*%Omega1 - t(nu1) + 2*rho*alpha0 + t(c(2*rho-nu3, rep(0,k)))
+  Theta.new<-nu.Theta%*%de.Theta
+  # if sparsity is desired, shrink the extremely small estimate to 0
+  if(est_thred) { Theta.new[which(abs(Theta.new)<thred)]<-0 } 
+  return(list(de.Theta = de.Theta, nu.Theta = nu.Theta, Theta.new = Theta.new))
+}
+update_D <- function(X, R, w2, rho, nu2, beta0, est_thred, thred) {
+  k <- ncol(X) - 1
+  de.D<-solve(as.numeric(w2)*t(X)%*%X + 2*rho*diag(rep(1,k+1)))
+  nu.D<-as.numeric(w2)*t(X)%*%R - nu2+2*rho*beta0
+  D.new<-de.D%*%nu.D
+  
+  if(est_thred) {D.new[which(abs(D.new)<thred)] <- 0 }
+  return(list(de.D = de.D, nu.D = nu.D, D.new = D.new))
+}
 opt_func<-function(Z,M,R,
                    Theta,D,
                    Sigma1,Sigma2,
@@ -111,15 +127,13 @@ mediation_net_ADMM_NC<-function(Z, M, R,
                                 alpha0 = matrix(rep(0, k + 1),nrow = 1),
                                 beta0 = matrix(rep(0, k + 1), ncol = 1)) {
   n<-nrow(M)
-  
   X<-cbind(Z,M)
   e1<-c(1,rep(0,k))
   
   sum_Z2 <- sum(Z ** 2)
-  # C'
+  # C': never used again
   C2.hat <- sum(R * Z) / sum_Z2
   tau2.hat <- mean((R - Z * C2.hat) ** 2)
-  
   # OLS for A
   A.hat <- t(Z) %*% M / sum_Z2
   Theta.tilde <- cbind(1,A.hat)
@@ -127,8 +141,8 @@ mediation_net_ADMM_NC<-function(Z, M, R,
   Sigma1.tilde <- diag(apply(E1_hat, 2, function(x) mean(x ** 2)))
   
   # Initial values
-  Sigma10 <- ifelse(is.null(Sigma1), diag(diag(t(M-Z%*%Theta0[-1])%*%(M-Z%*%Theta0[-1])/n)), Sigma1)
-  Sigma20 <- ifelse(is.null(Sigma2), t(R-X%*%D0)%*%(R-X%*%D0), Sigma2)
+  Sigma10 <- ifelse(is.null(Sigma1), diag(diag(t(M-Z%*%Theta0[-1])%*%(M-Z%*%Theta0[-1])/n)), Sigma1) # estimate of Var(E1) (not consider correlation)
+  Sigma20 <- ifelse(is.null(Sigma2), t(R-X%*%D0)%*%(R-X%*%D0), Sigma2) # estimate of n*Var(E2)
   
   nu1=nu2<-rep(0,k+1)
   nu3<-0
@@ -148,7 +162,7 @@ mediation_net_ADMM_NC<-function(Z, M, R,
   }
   
   diff<-100
-  s<-0
+  s<-0 # count of itrations
   
   time<-system.time(
     while(diff>=tol&s<=max.itr) {
@@ -158,22 +172,10 @@ mediation_net_ADMM_NC<-function(Z, M, R,
       w2<-1/(Sigma20*n)
       
       # Update Theta
-      de.Theta<-solve((t(Z)%*%Z)[1,1]*Omega1+2*rho*diag(rep(1,k+1))+2*rho*e1%*%t(e1))
-      nu.Theta<-t(Z)%*%X%*%Omega1-t(nu1)+2*rho*alpha0+(2*rho-nu3)*t(e1)
-      Theta.new<-nu.Theta%*%de.Theta
-      if(est_thred==TRUE) {
-        Theta.idx<-which(abs(Theta.new)<thred)
-        Theta.new[Theta.idx]<-0
-      }
-      
+      # Theta.new, de.Theta, nu.Theta
+      list2env(update_theta(Z, Omega1, rho, k, nu1, nu3, alpha0, est_thred, thred), envir = globalenv())
       # Update D
-      de.D<-solve(w2[1,1]*t(X)%*%X+2*rho*diag(rep(1,k+1)))
-      nu.D<-w2[1,1]*t(X)%*%R-nu2+2*rho*beta0
-      D.new<-de.D%*%nu.D
-      if(est_thred==TRUE) {
-        D.idx<-which(abs(D.new)<thred)
-        D.new[D.idx]<-0
-      }
+      list2env(update_D(X, R, w2, rho, nu2, beta0, est_thred, thred), envir = globalenv())
       
       # Update alpha and beta
       alpha.new<-matrix(rep(NA,k+1),nrow=1)
@@ -191,6 +193,7 @@ mediation_net_ADMM_NC<-function(Z, M, R,
         beta.new[j,1]<-re$b
       }
       
+      # update nu
       nu1<-nu1+2*rho*t(Theta.new-alpha.new)
       nu2<-nu2+2*rho*(D.new-beta.new)
       nu3<-nu3+2*rho*(Theta.new%*%e1-1)[1,1]
@@ -235,6 +238,7 @@ mediation_net_ADMM_NC<-function(Z, M, R,
       }
     }
   )
+  
   if(s>max.itr) {
     warning("Method does not converge!")
   }
@@ -288,18 +292,14 @@ mediation_net_ADMM_NC<-function(Z, M, R,
   d<-sum(abs(c(t(A.hat)*B.hat,C.hat))>thred)
   net.BIC<--2*ll$ll.MR+d*log(n)
   
-  if(trace==TRUE) {
-    re<-list(lambda=lambda,omega=omega,phi=phi,Phi1=Phi1,Phi2=Phi2,rho=rho,A=A.hat,C=C.hat,B=B.hat,AB=t(A.hat)*B.hat,Sigma=Sigma.hat,
-             C2=C2.hat[1,1],tau2=tau2.hat,logLik=data.frame(ZMR=ll$ll.MR,ZR=ll$ll.R,lA=ll$ll.A,lB=ll$ll.B),
-             BIC=net.BIC,converge=(s<=max.itr),alpha=alpha0,beta=beta0,Theta.1=Theta0[1,1],constraint=constraint,time=time,
-             Theta.trace=Theta.trace,D.trace=D.trace,alpha.trace=alpha.trace,beta.trace=beta.trace,
-             Theta.sg=Theta.sg,D.sg=D.sg,alpha.sg=alpha.sg,beta.sg=beta.sg,opt_func.sg=f)
-  } else {
-    re<-list(lambda=lambda,omega=omega,phi=phi,Phi1=Phi1,Phi2=Phi2,rho=rho,A=A.hat,C=C.hat,B=B.hat,AB=t(A.hat)*B.hat,Sigma=Sigma.hat,
+  re <- list(lambda=lambda,omega=omega,phi=phi,Phi1=Phi1,Phi2=Phi2,rho=rho,A=A.hat,C=C.hat,B=B.hat,AB=t(A.hat)*B.hat,Sigma=Sigma.hat,
              C2=C2.hat[1,1],tau2=tau2.hat,logLik=data.frame(ZMR=ll$ll.MR,ZR=ll$ll.R,lA=ll$ll.A,lB=ll$ll.B),
              BIC=net.BIC,converge=(s<=max.itr),alpha=alpha0,beta=beta0,Theta.1=Theta0[1,1],constraint=constraint,time=time)
+  if (trace) { 
+    re <- append(re, 
+                 list(Theta.trace=Theta.trace,D.trace=D.trace,alpha.trace=alpha.trace,beta.trace=beta.trace,
+                      Theta.sg=Theta.sg,D.sg=D.sg,alpha.sg=alpha.sg,beta.sg=beta.sg,opt_func.sg=f))
   }
-  
   return(re)
 }
 
