@@ -46,25 +46,28 @@ runonce<-function(l) { # l could be the number of replicates and is used to deci
         out<-NULL
         if(i==length(lambda)) {
           # starting from the largest lambda value
-          try(out<-mediation_net_ADMM_NC(Z,M,R,
-                                         lambda=0,
-                                         omega=lambda[i],
-                                         phi=phi,
-                                         Phi1=Phi1,Phi2=Phi2,
+          try(out<-mediation_net_ADMM_NC(Z, M, R,
+                                         lambda = 0, # when lambda in the penalty is 0, it's just LASSO
+                                         omega = lambda[i],
+                                         phi = phi, Phi1 = Phi1, Phi2 = Phi2,
                                          rho=rho,rho.increase=FALSE,
                                          tol=tol,max.itr=max.itr,
                                          thred=thred,
                                          Sigma1=Sigma10,Sigma2=Sigma20,trace=FALSE))
         } else {
           # for smaller lambda (ith lambda), use the (i+1)th lambda results as burn-in 
-          try(out<-mediation_net_ADMM_NC(Z,M,R,lambda=0,omega=lambda[i],phi=phi,Phi1=Phi1,Phi2=Phi2,
-                                         rho=rho,rho.increase=FALSE,tol=tol,max.itr=max.itr,thred=thred,Sigma1=Sigma10,Sigma2=Sigma20,trace=FALSE,
-                                         Theta0=matrix(c(1,A.est[,i+1]*(sd.Z/sd.M)),nrow=1),D0=matrix(c(C.est[i+1]*(sd.Z/sd.R),B.est[,i+1]*(sd.M/sd.R)),ncol=1),
-                                         alpha0=matrix(c(1,A.est[,i+1]*(sd.Z/sd.M)),nrow=1),beta0=matrix(c(C.est[i+1]*(sd.Z/sd.R),B.est[,i+1]*(sd.M/sd.R)),ncol=1)))
+          try(out<-mediation_net_ADMM_NC(Z, M, R, lambda = 0, omega = lambda[i],
+                                         phi = phi, Phi1 = Phi1, Phi2 = Phi2,
+                                         rho=rho,rho.increase=FALSE,
+                                         tol=tol,max.itr=max.itr,
+                                         thred=thred,
+                                         Sigma1=Sigma10,Sigma2=Sigma20,trace=FALSE,
+                                         Theta0=matrix(c(1, A.est[,i+1] * (sd.Z/sd.M)),nrow=1), D0=matrix(c(C.est[i+1]*(sd.Z/sd.R),B.est[,i+1]*(sd.M/sd.R)),ncol=1),
+                                         alpha0=matrix(c(1,A.est[,i+1]*(sd.Z/sd.M)),nrow=1), beta0=matrix(c(C.est[i+1]*(sd.Z/sd.R),B.est[,i+1]*(sd.M/sd.R)),ncol=1)))
         }
         
         if(is.null(out)==FALSE) {
-          re[[i]]<-out
+          re[[i]] <- out
           # scale the estimate back to the original scale
           B.est[,i]<-out$B*(sd.R/sd.M)
           C.est[i]<-out$C*(sd.R/sd.Z)
