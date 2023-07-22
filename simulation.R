@@ -98,7 +98,7 @@ runonce<-function(l)
     AB.pf<-A.pf*B.pf
     
     re<-vector("list",length=length(lambda))
-    AB.es=A.estt=B.est<-matrix(NA,k,length(lambda))
+    AB.est=A.est=B.est<-matrix(NA,k,length(lambda))
     C.est<-rep(NA,length(lambda))
     
     if(method=="Lasso")
@@ -282,6 +282,8 @@ for(mm in 1:length(rho.M))
   }
   
   require(parallel)
+  
+  runonce(1)
   
   for(ii in 1:length(method0))
   {
