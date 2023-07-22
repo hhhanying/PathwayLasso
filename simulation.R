@@ -101,6 +101,10 @@ runonce<-function(l)
     AB.est=A.est=B.est<-matrix(NA,k,length(lambda))
     C.est<-rep(NA,length(lambda))
     
+    # if hyperparameters are not provided, use the default values
+    Phi1 <- ifelse(exists("Phi1"), Phi1, NULL)
+    Phi2 <- ifelse(exists("Phi2"), Phi2, NULL)
+    
     if(method=="Lasso")
     {
       for(i in length(lambda):1)
